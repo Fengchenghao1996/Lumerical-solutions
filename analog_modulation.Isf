@@ -1,0 +1,90 @@
+clear;
+#define the frequency of ac voltage
+f=[1e+8,1e+9,2e+9,5e+9,1e+10,20e+9,30e+9,40e+9,50e+9]; 
+
+#set dc bias voltage
+VD=[-2,-1,0,0.5,1,2];
+
+#Electrical signal: V=Vd+V0*cos(wt)
+V0=0.2;
+Pi=3.1415926;
+N=256*3;
+
+#monitor to record and calculate charge in the waveguide
+addchargemonitor;
+monitorname="waveguide_np";
+set("name",monitorname);
+set("monitor type","2D y-normal");
+set("record electrons",1);
+set("record holes",1);
+set("integrate total charge",1);
+guidewidth=0.5*1e-6;
+set("x",0);
+set("x span",guidewidth);
+zmin=0;
+zmax=0.22*1e-6;
+set("z min",zmin);
+set("z max",zmax);
+guidelength=1e-6;
+volume=(zmax*100)*(guidewidth*100)*(guidelength*100);
+
+#sweep voltage, run the analysis
+for (m=1:6)
+{
+  Vd=VD(m);
+  for (n=1:8)
+    {
+    ff=f(n);
+    dt=1/ff/256;
+    T=(0:N-1)*dt;
+    V=1:N;
+      for(i=1:N){
+      V(i)=Vd+V0*sin(2*Pi*ff*T(i));
+      }
+    
+    #add electrical contact
+    setcontact('anode','transient','voltage enable transient',true);
+    setcontact('anode','transient','fixed contact',0);
+    select("CHARGE");
+    setcontact('anode','transient','voltage table',V);
+    setcontact('anode','transient','voltage time steps',T);
+    setcontact('cathode','transient','fixed contact',1);
+    
+    #record charge and save data
+    monitorpath="CHARGE::"+monitorname;
+    select(monitorpath); 
+    set("save data",1);
+    filename1="np_Vd"+num2str(m)+"frequency"+num2str(n);
+    set("filename",filename1);
+    
+    #set trasient mode
+    select("CHARGE");
+    set("solver mode","transient");
+    set("transient min time step",dt); 
+    set("transient max time step",dt); 
+    unselectall;
+    
+    #run the program
+    run;
+
+    #handle and record data
+    I=getdata("CHARGE","cathode","I");
+    plot(T,I(1:256*3));
+    npdensity=getresult(monitorpath,"total_charge");    
+    
+    #calculate average n,p density in the waveguide region
+    ndensity=npdensity.n/volume;    
+    pdensity=npdensity.p/volume; 
+    plot(T,ndensity(1:256*3),pdensity(1:256*3));    
+    It=I(257:256*3);
+    Tt=T(257:256*3);
+    Ut=V(257:256*3);
+    
+    #save filename
+    filename2="results_Vd"+num2str(m)+"frequency"+num2str(n);
+    matlabsave(filename2, Tt,It,Ut,I,T,V,npdensity,ndensity,pdensity);
+
+    #switch to layout to run next sweep    
+    if ((n<8) & (m<6)) {switchtolayout;}
+}
+}
